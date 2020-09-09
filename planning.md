@@ -4,19 +4,35 @@
 
 This section focuses on considerations to take into account when you plan your migration.
 
-## Overview
+* **[Migration tools](#migration-tools)**:
+  * [Migration Toolkit for Containers](#migration-toolkit-for-containers)
+  * [Alternative upstream migration tools](#alternative-upstream-migration-tools)
+  * When to consider using alternative tools vs MTC
+* Environment:
+  * **[OpenShift 3 considerations](#openshift-3-considerations)**: Aspects of the OpenShift 3 source environment that might affect migration
+  * **[OpenShift 4 considerations](#openshift-4-considerations)**: Aspects of the OpenShift 4 target environment that might affect migration
+* **[Migration strategies](#migration-strategies)**: Strategies for migrating stateless applications
 
-MTC performs migrations via a 2 step process of:
+## Migration tools
 
-* Step #1 - Source cluster:   Backup to Object Storage
-* Step #2 - Target cluster:   Restore from Object Storage
+### Migration Toolkit for Containers
+
+MTC migrates an application workload, including Kubernetes resources, data, and images, from the source cluster to the target cluster in two stages:
+
+1. Source cluster: The application workload is backed up to object storage.
+2. Target cluster: The application workload is restored from object storage.
 
 The following are processed in a migration:
 
-* Kubernetes Resources
-    * All namespaced resources are processed, including Custom Resources.  MTC performs a dynamic discovery of all API resources in each referenced namespace.
-    * Some cluster scoped resources are processed.  If a namespaced resource references a cluster scoped resource it will be processed.  For example this would include: Persistent Volumes bound to a Persistent Volume Claim, Cluster Role Bindings, and Security Context Constraints
-* Persistent Volume data
+**Kubernetes resources**
+
+MTC migrates all namespaced resources, including Custom Resources, by performing a dynamic discovery of all API resources in each referenced namespace.
+
+MTC migrates some cluster-scoped resources. If a namespaced resource references a cluster-scoped resource, it will be processed.  For example this would include: Persistent Volumes bound to a Persistent Volume Claim, Cluster Role Bindings, and Security Context Constraints
+
+**Persistent Volume data**
+
+
     * 2 options exist for processing Persistent Volume data
         * Move:  For remote storage (example: NFS) that is accessible by both source and target, it may be possible to only ‘move’ the PV definition from source cluster to target.  This is quickest way to handle PV data migration
         * Copy:  2 methods for 'copying' exist
@@ -25,13 +41,13 @@ The following are processed in a migration:
 * Internal Images
     * Internal images such as the result of `s2i` builds will be processed during a migration.  Each ImageStream reference in a given namespace will be copied to the destination cluster's registry.
 
-## When to use MTC
+#### When to use MTC
 
 In an ideal scenario migrating an application from one cluster to another would be a redeploy of the application from a pipeline and perhaps copy of persistent volume data.  For many situations this may not be sufficient as a running application on the cluster may have had adhoc changes done to it over some period of time and it's drifted from the initial deploy.  MTC is designed to handle those cases when a user is not sure exactly what is in a namespace and they want the entire contents migrated to a new cluster.
 
 Our general recommendation is if it's possible to redeploy your application from a pipeline proceed with that option, if not leverage MTC
 
-## Alternative Tools in Upstream
+### Alternative upstream migration tools
 
 In addition to MTC, there are 2 tools in upstream which may be of interest for larger scale migrations to help only with migration of PVs and Images.
 * `pvc-migrate`: https://github.com/konveyor/pvc-migrate
@@ -51,13 +67,13 @@ If these tools are used, they would be leveraged by:
 ### When to consider using alternative tools vs MTC
 
  * Large scale migrations
-    * ~50+ ImageStreams per Namespace
-    * Multiple ~100GB+ Persistent Volumes to be copied
+  * ~50+ ImageStreams per Namespace
+  * Multiple ~100GB+ Persistent Volumes to be copied
 
  * Requirements for alternative tools
-    * Direction connection available between source and target cluster, i.e. a process on each Node of the source cluster is able to connect to an exposed Route on the target cluster.
-    * The host executing pvc-migrate has root ssh access to each Node of the source cluster
-    * For pvc-migrate, OCS 3 -> OCS 4 is the only supported path.  No other storage providers are implemented.
+  * Direction connection available between source and target cluster, i.e. a process on each Node of the source cluster is able to connect to an exposed Route on the target cluster.
+  * The host executing pvc-migrate has root ssh access to each Node of the source cluster
+  * For pvc-migrate, OCS 3 -> OCS 4 is the only supported path.  No other storage providers are implemented.
 
  * Considerations of MTC vs alternative tools
     * Serial processing: MTC processes 1 Plan at a time and 1 Backup/Restore operation at a time
@@ -71,11 +87,13 @@ If these tools are used, they would be leveraged by:
         * Alternative tools leverage Ansible, a small amount of python snippets when essential, and standard tools of rsync and skopeo.  Users are more likely to have a familiarity with Ansible and be able to debug problems and/or customize behavior as they need.
             * An example we've seen in past has been when doing large migrations at scale and running into filesystem corruption issues.  Leveraging `pvc-migrate` with rsync, it is fairly easy to see the rsync error from a corrupted source file and reason through the fix, then address on source volume and re-migrate that PV.  
 
-## Source environment
+## Environment
+
+### OpenShift 3 considerations
 
 The following considerations apply to the OpenShift 3 source environment.
 
-### TLS
+#### TLS
 
 * Termination types
   * Passthrough
@@ -90,36 +108,38 @@ The following considerations apply to the OpenShift 3 source environment.
   * Reading PEM files
   * Embedded certificates
 
-### Routing
+#### Routing
 
 * Traffic traversal between clusters
 
-### External dependencies
+#### External dependencies
 
 * Ingress/Egress
 
-### Images
+#### Images
 
 * Migrating the internal image registry
 * Prune the image registry before migration
 * TBD: unknown blob error in registry (perhaps related to NFS)
 
-### Storage
+#### Storage
 
 * An intermediate object storage is required to act as a replication repository for the CAM tool to migrate data
 * Source and target clusters must have full access to the replication repository
 * Create a migration plan to copy or move the data
 * TBD: Velero does not over-write objects in source environment. Link to Velero documentation.
 
-## Target environment
+### OpenShift 4 considerations
 
-The following considerations apply to the OpenShift 4 target environment.
+The following considerations apply to the OpenShift 4 target environment:
 
 * Creating namespaces before migration is problematic because it can cause quotas to change.
 
 ## Migration strategies
 
-### Stateless Applications * Big Bang migration
+This section describes migration strategies for stateless applications.
+
+### "Big Bang" migration
 
 * Applications are deployed in the 4.x cluster.
 * If necessary, the 4.x router default certificate includes the 3.x wildcard SAN.
@@ -128,7 +148,7 @@ The following considerations apply to the OpenShift 4 target environment.
 
 ![BigBang](https://github.com/redhat-cop/openshift-migration-best-practices/raw/master/images/migration-strategy-bigbang.png)
 
-### Stateless Applications * Individual migration
+### Individual migration
 
 * Applications are deployed in the 4.x cluster
 * If necessary, the 4.x router default certificate includes the 3.x wildcard SAN.
@@ -139,7 +159,7 @@ For each app, at migration time, a new record is created with the app 3.x fqdn/h
 
 ![Individual](https://github.com/redhat-cop/openshift-migration-best-practices/raw/master/images/migration-strategy-individual.png)
 
-### Stateless Applications * Individual canary-release-style migration
+### Individual canary-release-style migration
 
 * Applications are deployed in the 4.x cluster
 * If necessary, the 4.x router default certificate includes the 3.x wildcard SAN.
@@ -156,7 +176,7 @@ X is gradually moved from 100 to 0.
 
 ![Canary](https://github.com/redhat-cop/openshift-migration-best-practices/raw/master/images/migration-strategy-canary.png)
 
-### Stateless Applications * Individual audience-based migration
+### Individual audience-based migration
 
 * Applications are deployed in the 4.x cluster
 * If necessary, the 4.x router default certificate includes the 3.x wildcard SAN.
@@ -170,3 +190,4 @@ For each app, at migration time, a new record is created with the app 3.x fqdn/h
 The proxy entry for that app is configured to route traffic matching a given header pattern (e.g.: test customers) of the traffic to the 4.x router VIP and the rest of the traffic to 3.x VIP. More and more cohorts of customers are moved to the 4.x VIP through waves, until all the customers are on the 4.x VIP.
 
 ![Audience](https://github.com/redhat-cop/openshift-migration-best-practices/raw/master/images/migration-strategy-audience.png)
+
